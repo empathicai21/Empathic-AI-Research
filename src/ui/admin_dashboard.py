@@ -89,8 +89,21 @@ class AdminDashboard:
         # Bot distribution
         st.subheader("Participant Distribution by Bot Type")
         
-        dist_data = stats.get('bot_distribution', {})
-        df_dist = pd.DataFrame({'Bot Type': list(dist_data.keys()), 'Count': list(dist_data.values())})
+        # Normalize historical label 'control' -> 'neutral' and group counts
+        dist_raw = stats.get('bot_distribution', {})
+        dist_norm: Dict[str, int] = {}
+        for k, v in dist_raw.items():
+            label = (k or '').lower()
+            if label in ('control', 'neutral'):
+                key = 'neutral'
+            elif label in ('emotional', 'cognitive', 'motivational'):
+                key = label
+            else:
+                key = label or 'unknown'
+            dist_norm[key] = dist_norm.get(key, 0) + int(v or 0)
+        # Keep consistent order
+        ordered_keys = [b for b in ['cognitive', 'emotional', 'motivational', 'neutral'] if b in dist_norm] or list(dist_norm.keys())
+        df_dist = pd.DataFrame({'Bot Type': [k.capitalize() for k in ordered_keys], 'Count': [dist_norm[k] for k in ordered_keys]})
         
         col1, col2 = st.columns([2, 1])
         
@@ -117,6 +130,13 @@ class AdminDashboard:
             st.info("No participants yet.")
             return
         
+        # Helper to normalize bot label
+        def _label_bot(bot: str) -> str:
+            b = (bot or '').lower()
+            if b == 'control':
+                return 'Neutral'
+            return (b.capitalize() if b else '')
+
         # Create dataframe
         data = []
         for p in participants:
@@ -127,7 +147,8 @@ class AdminDashboard:
             data.append({
                 'ID': p.id,
                 'Prolific ID': getattr(p, 'prolific_id', None) or '',
-                'Bot Type': p.bot_type,
+                'Bot Type': _label_bot(getattr(p, 'bot_type', None)),
+                'Watermark': getattr(p, 'watermark_condition', None) or '',
                 'Messages': p.total_messages,
                 'Completed': '✓' if p.completed else '✗',
                 'Crisis': '⚠' if p.crisis_flagged else '',
@@ -264,25 +285,25 @@ class AdminDashboard:
         """Display bot type comparison statistics."""
         st.header("Bot Type Comparison")
         
-        # Get statistics by bot type
-        stats = self.db_manager.get_statistics()
-        bot_dist = stats.get('bot_distribution', {})
-        
         # Create comparison data
         comparison_data = []
-        
-        # Use dynamic bot types from DB; fallback to common list
-        try:
-            bot_types = self.db_manager.get_distinct_bot_types() or ['emotional', 'cognitive', 'motivational', 'neutral', 'control']
-        except Exception:
-            bot_types = ['emotional', 'cognitive', 'motivational', 'neutral', 'control']
+        # Use canonical list; merge any historical 'control' into 'neutral'
+        bot_types = ['cognitive', 'emotional', 'motivational', 'neutral']
 
         for bot_type in bot_types:
             # Get participants for this bot type
             session = self.db_manager.get_session()
             try:
                 from src.database.models import Participant
-                participants = session.query(Participant).filter_by(bot_type=bot_type).all()
+                if bot_type == 'neutral':
+                    # Merge historical 'control' under neutral
+                    participants = (
+                        session.query(Participant)
+                        .filter(Participant.bot_type.in_(['neutral', 'control']))
+                        .all()
+                    )
+                else:
+                    participants = session.query(Participant).filter_by(bot_type=bot_type).all()
                 
                 if participants:
                     total = len(participants)
@@ -293,7 +314,7 @@ class AdminDashboard:
                     completion_pct = (completed/total*100) if total > 0 else 0.0
                     
                     comparison_data.append({
-                        'Bot Type': bot_type.capitalize(),
+                        'Bot Type': 'Neutral' if bot_type == 'neutral' else bot_type.capitalize(),
                         'Participants': total,
                         'Completed': completed,
                         'Completion %': f"{completion_pct:.1f}",
@@ -347,7 +368,7 @@ class AdminDashboard:
                 data.append({
                     'Participant ID': p.id,
                     'Prolific ID': getattr(p, 'prolific_id', None) or '',
-                    'Bot Type': p.bot_type,
+                    'Bot Type': ('Neutral' if (getattr(p, 'bot_type', '') or '').lower() == 'control' else (getattr(p, 'bot_type', '') or '').capitalize()),
                     'Feedback Rating': p.feedback_rating if getattr(p, 'feedback_rating', None) is not None else '',
                     'Feedback Time (AZ)': fmt_az(getattr(p, 'feedback_time', None), "%Y-%m-%d %H:%M:%S"),
                     'Feedback Text': getattr(p, 'feedback_text', '') or ''

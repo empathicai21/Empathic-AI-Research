@@ -69,9 +69,9 @@ class BotManager:
             "cognitive": _read_text(["config/cognitive_empathy_prompt.txt", "cognitive_empathy_prompt.txt"]),
             "emotional": _read_text(["config/emotional_empathy_prompt.txt", "emotional_empathy_prompt.txt"]),
             "motivational": _read_text(["config/motivational_empathy_prompt.txt", "motivational_empathy_prompt.txt"]),
-            "control": ""  # neutral baseline
+            "neutral": ""  # neutral baseline
         }
-        self.bot_types = ["cognitive", "emotional", "motivational", "control"]
+        self.bot_types = ["cognitive", "emotional", "motivational", "neutral"]
 
         # Sessions (in memory)
         self.sessions: Dict[str, Dict[str, Any]] = {}
@@ -87,18 +87,56 @@ class BotManager:
         # Initialize provider client
         self._init_client()
 
-    # ---------- Public API expected by app.py ----------
+    # Public API expected by app.py
 
-    def create_new_session(self) -> Dict[str, Any]:
+    def create_new_session(self, bot_type: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Create a new session with optional bot_type override.
+        Empathy modality assignment remains sequential; watermark visibility is randomized.
+        
+        Args:
+            bot_type: Optional bot type to assign. Must be one of self.bot_types if provided.
+            
+        Returns:
+            Dict with session_id, participant_id, bot_type, and watermark_condition
+            
+        Raises:
+            ValueError: If bot_type is provided but not in valid bot_types list
+        """
         session_id = str(uuid.uuid4())
         participant_id = f"P{str(uuid.uuid4())[:8].upper()}"
-        bot_type = random.choice(self.bot_types)
+        
+        # Validate bot_type if provided
+        if bot_type is not None and bot_type not in self.bot_types:
+            raise ValueError(f"Invalid bot_type: '{bot_type}'. Must be one of {self.bot_types}")
+        
+        # If no bot_type specified, use sequential assignment
+        if bot_type is None:
+            # Get total participants from database for sequential rotation
+            try:
+                stats = self.db.get_statistics()
+                total_participants = stats.get('total_participants', 0)
+                index = total_participants % len(self.bot_types)
+                bot_type = self.bot_types[index]
+            except Exception:
+                # Fallback to random if database unavailable
+                bot_type = random.choice(self.bot_types)
+        
+        # Randomize watermark condition (visible/hidden) independently
+        watermark_condition = random.choice(["visible", "hidden"])
+
         self.sessions[session_id] = {
             "participant_id": participant_id,
             "bot_type": bot_type,
+            "watermark_condition": watermark_condition,
             "history": []  # [{"role":"user"/"assistant", "content": "..."}]
         }
-        return {"session_id": session_id, "participant_id": participant_id, "bot_type": bot_type}
+        return {
+            "session_id": session_id,
+            "participant_id": participant_id,
+            "bot_type": bot_type,
+            "watermark_condition": watermark_condition,
+        }
 
     def get_bot_response(self, session_id: str, user_message: str, message_num: int) -> Dict[str, Any]:
         sess = self.sessions.get(session_id)

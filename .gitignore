@@ -28,3 +28,7 @@ Thumbs.db
 
 # Streamlit
 .streamlit/secrets.toml
+# Exclude local tests
+/tests/
+/test_*.py
+

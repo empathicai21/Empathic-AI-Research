@@ -87,43 +87,40 @@ def main():
         # Display welcome and consent
         if chat_interface.display_welcome_page():
             # User agreed to participate
-            # Create new session
-            session_data = bot_manager.create_new_session()
+            
+            # Check for returning participant BEFORE creating session to avoid skewing sequential assignment
+            prior_bot_type = None
+            try:
+                ext_id = (st.session_state.get('prolific_id') or '').strip()
+                if ext_id:
+                    prior = db_manager.get_participant_by_prolific(ext_id)
+                    if prior and getattr(prior, 'bot_type', None) in ("cognitive", "emotional", "motivational", "neutral"):
+                        prior_bot_type = prior.bot_type
+            except Exception:
+                # Non-fatal; will use sequential assignment
+                pass
+            
+            # Create new session (with prior bot_type if returning participant)
+            session_data = bot_manager.create_new_session(bot_type=prior_bot_type)
             
             # Store in session state
             st.session_state.session_id = session_data['session_id']
             st.session_state.participant_id = session_data['participant_id']
             st.session_state.bot_type = session_data['bot_type']
+            st.session_state.watermark_condition = session_data.get('watermark_condition', 'visible')
 
-            # If a Prolific/external ID is present and we have a prior participant,
-            # keep the same bot_type to ensure modality stickiness between conversations.
-            try:
-                ext_id = (st.session_state.get('prolific_id') or '').strip()
-                if ext_id:
-                    prior = db_manager.get_participant_by_prolific(ext_id)
-                    if prior and getattr(prior, 'bot_type', None) in ("cognitive", "emotional", "motivational", "control"):
-                        # Override both session state and the in-memory BotManager session
-                        st.session_state.bot_type = prior.bot_type
-                        try:
-                            sid = st.session_state.session_id
-                            if sid in getattr(bot_manager, 'sessions', {}):
-                                bot_manager.sessions[sid]['bot_type'] = prior.bot_type
-                        except Exception:
-                            pass
-            except Exception:
-                # Non-fatal; fall back to the randomly assigned bot_type
-                pass
             st.session_state.show_welcome = False
             st.session_state.conversation_active = True
             # Reset conversation UI state
             st.session_state.messages = []
             st.session_state.current_message_num = 0
             
-            # Create participant in database (include Prolific ID if provided)
+            # Create participant in database (include Prolific ID and watermark condition)
             db_manager.create_participant(
                 st.session_state.participant_id,
                 st.session_state.bot_type,
-                prolific_id=st.session_state.get('prolific_id')
+                prolific_id=st.session_state.get('prolific_id'),
+                watermark_condition=st.session_state.get('watermark_condition', 'visible')
             )
             
             st.rerun()
@@ -151,10 +148,11 @@ def main():
         
         # Display title
         st.title("Mental Health Support Chat")
-        # Watermark and sticky research disclaimer (configurable)
+        # Conditional AI watermark based on assignment; disclaimer always shown
         ui_cfg = config.get('ui') if isinstance(config.get('ui'), dict) else {}
-        wm_text = ui_cfg.get('chat_watermark') if isinstance(ui_cfg, dict) else None
-        chat_interface.render_watermark(wm_text)
+        if st.session_state.get('watermark_condition', 'visible') == 'visible':
+            wm_text = ui_cfg.get('chat_watermark') if isinstance(ui_cfg, dict) else None
+            chat_interface.render_watermark(wm_text)
         disclaimer = ui_cfg.get('chat_disclaimer') if isinstance(ui_cfg, dict) else None
         chat_interface.render_disclaimer(disclaimer)
         
@@ -212,27 +210,20 @@ def main():
                     "bot_type": st.session_state.bot_type,
                     "history": hist,
                 }
-        except Exception:
-            # Non-fatal; bot_manager will raise a clear error on send if needed
-            pass
+        except Exception as e:
+            # Log the error for debugging but don't crash
+            if config.get('api', {}).get('debug', False):
+                st.warning(f"Session rehydration failed: {e}. This may cause issues with bot responses.")
+
         
-        # Check if conversation should end BEFORE taking input
-        if st.session_state.current_message_num >= max_messages:
-            # Mark as complete
-            st.session_state.conversation_active = False
-            st.session_state.conversation_complete = True
-            
-            # Mark participant as completed in database
-            db_manager.mark_participant_completed(st.session_state.participant_id)
-            
-            # End bot manager session
-            bot_manager.end_session(st.session_state.session_id, completed=True)
-            
-            st.rerun()
+        # Check if limit reached - disable input but don't auto-transition
+        limit_reached = st.session_state.current_message_num >= max_messages
+        
+        if limit_reached:
+            st.info(f"✅ You've reached the maximum of {max_messages} messages. Please click 'End Conversation' below to proceed to the feedback page.")
         
         # Get user input (disable if at limit)
-        should_disable = st.session_state.current_message_num >= max_messages
-        user_input = chat_interface.get_user_input(disabled=should_disable)
+        user_input = chat_interface.get_user_input(disabled=limit_reached)
         
         if user_input:
             # Increment message counter IN SESSION STATE

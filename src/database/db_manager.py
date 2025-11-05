@@ -61,11 +61,19 @@ class DatabaseManager:
         self.SessionLocal = sessionmaker(bind=self.engine)
         
         # Friendly notice (avoid printing secrets)
-        if url.startswith("sqlite:///"):
-            print(f"✓ Database initialized at: {db_path}")
-        else:
-            scheme = url.split(":", 1)[0]
-            print(f"✓ Database initialized via {scheme} (DATABASE_URL)")
+        try:
+            if url.startswith("sqlite:///"):
+                print(f"✓ Database initialized at: {db_path}")
+            else:
+                scheme = url.split(":", 1)[0]
+                print(f"✓ Database initialized via {scheme} (DATABASE_URL)")
+        except UnicodeEncodeError:
+            # Fallback for terminals that don't support Unicode
+            if url.startswith("sqlite:///"):
+                print(f"[OK] Database initialized at: {db_path}")
+            else:
+                scheme = url.split(":", 1)[0]
+                print(f"[OK] Database initialized via {scheme} (DATABASE_URL)")
     
     
     def get_session(self) -> Session:
@@ -82,7 +90,7 @@ class DatabaseManager:
     # PARTICIPANT OPERATIONS
      
     
-    def create_participant(self, participant_id: str, bot_type: str, prolific_id: Optional[str] = None) -> Participant:
+    def create_participant(self, participant_id: str, bot_type: str, prolific_id: Optional[str] = None, watermark_condition: Optional[str] = None) -> Participant:
         """
         Create a new participant in the database.
         
@@ -100,6 +108,7 @@ class DatabaseManager:
             participant = Participant(
                 id=participant_id,
                 bot_type=bot_type,
+                watermark_condition=(watermark_condition or 'visible'),
                 start_time=datetime.utcnow(),
                 total_messages=0,
                 completed=False,
@@ -187,6 +196,12 @@ class DatabaseManager:
             if 'feedback_time' not in cols:
                 with self.engine.connect() as conn:
                     conn.execute(text('ALTER TABLE participants ADD COLUMN feedback_time TIMESTAMP'))
+                    conn.commit()
+            # Add watermark_condition column for 2x4 design if missing
+            if 'watermark_condition' not in cols:
+                with self.engine.connect() as conn:
+                    # Use TEXT/VARCHAR without NOT NULL for broad dialect compatibility
+                    conn.execute(text("ALTER TABLE participants ADD COLUMN watermark_condition VARCHAR"))
                     conn.commit()
         except Exception:
             # If anything fails (e.g., permissions), we ignore; Base metadata still works for new DBs
@@ -485,7 +500,7 @@ class DatabaseManager:
             total_messages = session.query(Message).count()
             crisis_flags = session.query(CrisisFlag).count()
             
-            # Count by bot type dynamically (handles 'control' vs 'neutral' etc.)
+            # Count by bot type dynamically (handles any bot type variations)
             bot_counts = {}
             rows = (
                 session.query(Participant.bot_type, func.count(Participant.id))

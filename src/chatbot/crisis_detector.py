@@ -114,7 +114,7 @@ class CrisisDetector:
             with open('config/crisis_response.txt', 'r') as f:
                 response = f.read().strip()
             return response
-        except:
+        except Exception:
             # Fallback crisis response if file not found
             return """I'm concerned about what you're sharing and want you to know that help is available right now.
 

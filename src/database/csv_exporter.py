@@ -80,6 +80,7 @@ class CSVExporter:
             row = {
                 'participant_id': msg.participant_id,
                 'bot_type': participant.bot_type if participant else 'unknown',
+                'watermark_condition': getattr(participant, 'watermark_condition', None) if participant else None,
                 'message_num': msg.message_num,
                 'sender': msg.sender,
                 'message_text': msg.content,
@@ -134,6 +135,7 @@ class CSVExporter:
                 'participant_id': p.id,
                 'prolific_id': getattr(p, 'prolific_id', None),
                 'bot_type': p.bot_type,
+                'watermark_condition': getattr(p, 'watermark_condition', None),
                 'start_time_az': fmt_az(p.start_time, "%Y-%m-%d %H:%M:%S"),
                 'end_time_az': fmt_az(p.end_time, "%Y-%m-%d %H:%M:%S") if p.end_time else None,
                 'duration_minutes': round(duration_minutes, 2) if duration_minutes else None,

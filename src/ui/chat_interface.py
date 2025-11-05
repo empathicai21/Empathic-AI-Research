@@ -183,7 +183,7 @@ class ChatInterface:
         Returns:
             User's message text or empty string
         """
-        placeholder = "Type your message here..." if not disabled else "Conversation ended"
+        placeholder = "Type your message here..." if not disabled else "Message limit reached - click 'End Conversation' to proceed"
         
         user_input = st.chat_input(
             placeholder,

@@ -28,6 +28,10 @@ class Participant(Base):
     
     # Which bot type was assigned (emotional, cognitive, motivational, neutral)
     bot_type = Column(String, nullable=False)
+
+    # Experimental condition: AI watermark visibility ("visible" or "hidden")
+    # Added as an additive column to support 2x4 design without changing existing flows
+    watermark_condition = Column(String, nullable=True)
     
     # Timestamps for conversation
     start_time = Column(DateTime, default=datetime.utcnow)  # When conversation started

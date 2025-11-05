@@ -1,160 +1,190 @@
-"""
-Agent CLI Tester
-Send a message directly to the chatbot agent from the terminal, bypassing Streamlit UI.
-- Lets you pick bot type (emotional/cognitive/motivational/control)
-- Prints the exact system prompt being used
-- Sends your user message and prints the model's reply
-
-Defaults:
-- Does NOT save to the database by default. Use --save to persist.
-
-Usage (PowerShell):
-    # Basic (no DB writes)
-    python scripts/agent_cli.py --message "hello there"
-
-    # Choose a specific bot
-    python scripts/agent_cli.py --message "how do you feel today?" --bot emotional
-
-    # Print the exact messages sent to the model
-    python scripts\agent_cli.py --message "debug payload" --debug-print-messages
-
-    # Show full system prompt
-    python scripts\agent_cli.py --message "check the prompt" --show-full-prompt
-
-    # Persist to DB explicitly
-    python scripts/agent_cli.py --message "record this" --save
-
-    # Use a different model (optional)
-    python scripts/agent_cli.py --message "..." --model gpt-4o
-
-Environment:
-    - OPENAI_API_KEY must be set (env var or .env file)
-    - DATABASE_URL optional; only used when --save is provided
-"""
-
+﻿# Agent CLI Tester
 import argparse
-import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load env
 load_dotenv()
-
-# Add project root for imports
 project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
 
 from src.database.db_manager import DatabaseManager
 from src.chatbot.bot_manager import BotManager
 
-BOT_CHOICES = ["emotional", "cognitive", "motivational", "control"]
+BOT_CHOICES = ["emotional", "cognitive", "motivational", "neutral"]
+BOT_EMOJIS = {"emotional": "", "cognitive": "", "motivational": "", "neutral": ""}
 
-
-def _load_config(config_path: str = "config/app_config.yaml") -> dict:
+def load_config(config_path="config/app_config.yaml"):
     import yaml
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
+def print_sep():
+    print("\n" + "=" * 70 + "\n")
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Test chatbot agent from terminal")
-    parser.add_argument("--message", "-m", required=True, help="User message to send to the agent")
-    parser.add_argument("--bot", "-b", choices=BOT_CHOICES, help="Which empathy style to use")
-    parser.add_argument("--model", help="Override model (e.g., gpt-4o)")
-    # Saving behavior: default is NO SAVE; --save opt-in. Keep --no-save for compatibility.
-    parser.add_argument("--save", action="store_true", help="Persist participant and messages to the database")
-    parser.add_argument("--no-save", action="store_true", help="(Deprecated) Do not write anything to the database (default)")
-    parser.add_argument("--show-full-prompt", action="store_true", help="Print the entire system prompt, not just an excerpt")
-    parser.add_argument(
-        "--debug-print-messages",
-        action="store_true",
-        help="Print the exact message payload (system/history/user) sent to the model"
-    )
-    parser.add_argument("--dry-run", action="store_true", help="Do not call the model; only print prompts/messages")
-    args = parser.parse_args()
+def choose_bot():
+    print("\n Choose empathy modality:")
+    print("   1. Cognitive  2. Emotional  3. Motivational  4. Neutral")
+    while True:
+        c = input("Choice (1-4): ").strip()
+        if c == "1": return "cognitive"
+        if c == "2": return "emotional"
+        if c == "3": return "motivational"
+        if c == "4": return "neutral"
+        print("Invalid choice.")
 
-    # Load config and optionally override bot/model
-    config = _load_config()
-    if args.model:
-        config.setdefault("api", {})
-        config["api"]["model"] = args.model
-
-    # Determine whether to save
-    should_save = bool(args.save) and not bool(args.no_save)
-
-    # Initialize DB (use in-memory SQLite when not saving to avoid touching remote DB)
-    if should_save:
-        db_path = config.get("database", {}).get("path", "data/database/conversations.db")
-        db = DatabaseManager(db_path)
-    else:
-        db = DatabaseManager(db_url="sqlite:///:memory:")
+def run_interactive(config, args):
+    print("=" * 70)
+    print(" EMPATHIC AI - TESTING MODE ")
+    print("=" * 70)
+    
+    # Use in-memory database for testing (won't persist)
+    db = DatabaseManager(db_url="sqlite:///:memory:")
     bot = BotManager(db, config)
-
-    # Create a session and force bot_type if provided
-    sess = bot.create_new_session()
+    
+    # Determine bot type: command line arg, user choice, or let BotManager assign sequentially
     if args.bot:
-        bot.sessions[sess["session_id"]]["bot_type"] = args.bot
-
-    # Show the prompt that will be used
-    bot_type = bot.sessions[sess["session_id"]]["bot_type"]
-    prompt = bot.prompts.get(bot_type, "")
-    print("== Agent Setup ==")
-    print(f"Bot type: {bot_type}")
-    print(f"Model: {bot.model}")
-    if args.show_full_prompt:
-        print("System prompt (FULL):")
-        print("-" * 40)
-        print(prompt or "<EMPTY>")
-        print("-" * 40)
+        # Explicitly specified via --bot flag
+        bot_type = args.bot
+        sess = bot.create_new_session(bot_type=bot_type)
     else:
-        print("System prompt (first 400 chars):")
-        print("-" * 40)
-        print(prompt[:400] + ("..." if len(prompt) > 400 else ""))
-        print("-" * 40)
-
-    # Persist participant and first message unless --no-save
-    message_num = 1
-    participant_id = sess["participant_id"]
-    if should_save:
-        db.create_participant(participant_id, bot_type)
-
-    # Optionally print the exact request payload
-    if args.debug_print_messages:
-        messages_dbg = []
-        if prompt:
-            messages_dbg.append({"role": "system", "content": prompt})
-        messages_dbg.append({"role": "user", "content": args.message})
-        print("\n== Debug: request messages (what the model sees) ==")
-        for i, m in enumerate(messages_dbg):
-            preview = (m.get("content") or "")
-            print(f"[{i}] {m.get('role')}: {preview[:200]}" + ("..." if len(preview) > 200 else ""))
-
-    if args.dry_run:
-        print("\n--dry-run: skipping model call.")
-        return 0
-
-    # Send the message
-    print("\n== Sending user message ==")
-    print(args.message)
-    response = bot.get_bot_response(sess["session_id"], args.message, message_num)
-
-    # Save messages if needed
-    if should_save:
-        db.save_message(participant_id, message_num, "user", args.message)
-        db.save_message(participant_id, message_num, "bot", response["bot_response"], contains_crisis_keyword=response.get("crisis_detected", False))
-        db.mark_participant_completed(participant_id)
-
-    # Print the reply and crisis info
-    print("\n== Agent reply ==")
-    print(response["bot_response"]) 
-    if response.get("crisis_detected"):
-        print("\n[!] Crisis keyword detected.")
-        if response.get("detected_keyword"):
-            print(f"Keyword: {response['detected_keyword']}")
-
+        # Interactive choice
+        bot_type = choose_bot()
+        sess = bot.create_new_session(bot_type=bot_type)
+    
+    session_id = sess["session_id"]
+    print(f"\n Bot type: {bot_type.upper()}")
+    
+    prompt = bot.prompts.get(bot_type, "")
+    print_sep()
+    print(" SYSTEM PROMPT:")
+    print("-" * 70)
+    if args.show_full_prompt:
+        print(prompt or "<EMPTY>")
+    else:
+        print(prompt[:500] + ("..." if len(prompt) > 500 else ""))
+    print("-" * 70)
+    
+    max_msgs = config.get("conversation", {}).get("max_messages", 10)
+    print(f"\n {max_msgs} turns. Type quit/exit to end. Type debug to toggle debug.")
+    print_sep()
+    
+    msg_num = 0
+    debug_mode = args.debug
+    
+    while msg_num < max_msgs:
+        msg_num += 1
+        try:
+            user_input = input(f" Message ({msg_num}/{max_msgs}): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n\n Interrupted.")
+            break
+        
+        if not user_input:
+            print("  Empty message.")
+            msg_num -= 1
+            continue
+        
+        if user_input.lower() in ["quit", "exit", "q"]:
+            print("\n Ending...")
+            break
+        
+        if user_input.lower() == "debug":
+            debug_mode = not debug_mode
+            print(f" Debug: {'ON' if debug_mode else 'OFF'}")
+            msg_num -= 1
+            continue
+        
+        if debug_mode:
+            print("\n DEBUG:")
+            print("-" * 70)
+            print(f"[SYSTEM]: {prompt[:200]}...")
+            history = bot.sessions[session_id].get("history", [])
+            for msg in history:
+                print(f"[{msg['role'].upper()}]: {msg['content'][:150]}...")
+            print(f"[USER]: {user_input}")
+            print("-" * 70)
+        
+        emoji = BOT_EMOJIS.get(bot_type, "")
+        print(f"\n{emoji} Thinking...")
+        try:
+            resp = bot.get_bot_response(session_id, user_input, msg_num)
+            bot_resp = resp["bot_response"]
+            if resp.get("crisis_detected"):
+                print("  CRISIS DETECTED!")
+            print(f"\n{emoji} {bot_type.upper()}: {bot_resp}")
+            print_sep()
+        except Exception as e:
+            print(f"\n Error: {e}")
+            import traceback
+            traceback.print_exc()
+            break
+    
+    print_sep()
+    print(f" Complete! ({msg_num} messages)")
+    print(" NOT saved to database")
+    
+    history = bot.sessions[session_id].get("history", [])
+    print(f"\n SUMMARY: {bot_type.upper()} | {msg_num} turns | {len(history)} messages")
+    print("\n Full History:")
+    print_sep()
+    for msg in history:
+        icon = "" if msg["role"] == "user" else BOT_EMOJIS.get(bot_type, "")
+        print(f"{icon} {msg['role'].upper()}: {msg['content']}")
+        print()
+    print_sep()
+    print(" Thank you!")
     return 0
 
+def run_single(config, args):
+    db = DatabaseManager(db_url="sqlite:///:memory:")
+    bot = BotManager(db, config)
+    
+    # Use explicit bot type if provided, otherwise let BotManager assign sequentially
+    bot_type_arg = args.bot if args.bot else None
+    sess = bot.create_new_session(bot_type=bot_type_arg)
+    
+    bot_type = bot.sessions[sess["session_id"]]["bot_type"]
+    prompt = bot.prompts.get(bot_type, "")
+    
+    print("== Setup ==")
+    print(f"Bot: {bot_type} | Model: {bot.model}")
+    print("-" * 40)
+    print(prompt[:400] + ("..." if len(prompt) > 400 else ""))
+    print("-" * 40)
+    
+    if args.debug:
+        print("\n== Debug: Messages ==")
+        print(f"[SYSTEM]: {prompt[:200]}...")
+        print(f"[USER]: {args.message}")
+    
+    print("\n== Sending ==")
+    print(args.message)
+    resp = bot.get_bot_response(sess["session_id"], args.message, 1)
+    
+    print("\n== Reply ==")
+    print(resp["bot_response"])
+    if resp.get("crisis_detected"):
+        print("\n[!] Crisis detected")
+    return 0
+
+def main():
+    parser = argparse.ArgumentParser(description="Test chatbot agent")
+    parser.add_argument("--message", "-m", help="Single message mode")
+    parser.add_argument("--bot", "-b", choices=BOT_CHOICES, help="Bot type")
+    parser.add_argument("--model", help="Override model")
+    parser.add_argument("--show-full-prompt", action="store_true", help="Show full prompt")
+    parser.add_argument("--debug", action="store_true", help="Debug mode")
+    args = parser.parse_args()
+    
+    config = load_config()
+    if args.model:
+        config.setdefault("api", {})["model"] = args.model
+    
+    if args.message:
+        return run_single(config, args)
+    else:
+        return run_interactive(config, args)
 
 if __name__ == "__main__":
     raise SystemExit(main())

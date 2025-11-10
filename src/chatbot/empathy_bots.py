@@ -50,14 +50,10 @@ class EmpathyBot:
             'emotional': 'config/emotional_empathy_prompt.txt',
             'cognitive': 'config/cognitive_empathy_prompt.txt',
             'motivational': 'config/motivational_empathy_prompt.txt',
-            'neutral': None  # Neutral bot has no special prompt
+            'neutral': 'config/neutral_empathy_prompt.txt'
         }
         
         prompt_file = prompt_files.get(self.bot_type)
-        
-        # Neutral bot uses no system prompt (default API behavior)
-        if prompt_file is None:
-            return ""
         
         # Load prompt from file
         try:

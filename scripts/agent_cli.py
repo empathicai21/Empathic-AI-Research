@@ -53,7 +53,13 @@ def run_interactive(config, args):
         sess = bot.create_new_session(bot_type=bot_type)
     
     session_id = sess["session_id"]
+    watermark_condition = sess.get("watermark_condition", "unknown")
+    watermark_icon = "👁️" if watermark_condition == "visible" else "🔒" if watermark_condition == "hidden" else "❓"
+    
     print(f"\n Bot type: {bot_type.upper()}")
+    print(f" Watermark: {watermark_condition.upper()} {watermark_icon}")
+    print(f" Session ID: {session_id}")
+    print(f" Participant ID: {sess.get('participant_id', 'N/A')}")
     
     prompt = bot.prompts.get(bot_type, "")
     print_sep()
@@ -168,6 +174,73 @@ def run_single(config, args):
         print("\n[!] Crisis detected")
     return 0
 
+def test_sequence(config, num_participants):
+    """Test sequential assignment with watermark conditions."""
+    print("🔍 TESTING SEQUENTIAL ASSIGNMENT WITH WATERMARKS")
+    print("=" * 60)
+    
+    # Use in-memory database for testing (clean slate)
+    # Temporarily override DATABASE_URL to force in-memory database
+    import os
+    original_db_url = os.environ.get("DATABASE_URL")
+    os.environ.pop("DATABASE_URL", None)  # Remove to force using db_path
+    
+    try:
+        db = DatabaseManager(db_path=":memory:")
+        bot = BotManager(db, config)
+    finally:
+        # Restore original DATABASE_URL
+        if original_db_url:
+            os.environ["DATABASE_URL"] = original_db_url
+    
+    print(f"Bot types: {bot.bot_types}")
+    print(f"Expected sequence: {' → '.join(bot.bot_types)}")
+    print(f"Testing with {num_participants} participants...\n")
+    
+    visible_count = 0
+    hidden_count = 0
+    
+    for i in range(num_participants):
+        # Create session without specifying bot_type to use sequential assignment
+        sess = bot.create_new_session()
+        
+        participant_id = sess['participant_id']
+        bot_type = sess['bot_type']
+        watermark = sess['watermark_condition']
+        
+        # Create participant in database so sequential assignment count increases
+        db.create_participant(participant_id, bot_type, watermark_condition=watermark)
+        
+        # Track watermark distribution
+        if watermark == 'visible':
+            visible_count += 1
+        else:
+            hidden_count += 1
+        
+        # Expected bot type based on sequential assignment
+        expected_bot = bot.bot_types[i % 4]
+        
+        # Visual indicators
+        sequence_check = "✓" if bot_type == expected_bot else "✗"
+        watermark_icon = "👁️" if watermark == "visible" else "🔒"
+        
+        print(f"P{i+1:2d}: {participant_id} | {bot_type:12s} | {watermark:7s} {watermark_icon} | {sequence_check}")
+        
+        # Verify sequential assignment
+        if bot_type != expected_bot:
+            print(f"    ⚠️  Expected {expected_bot}, got {bot_type}")
+    
+    print(f"\nResults:")
+    print(f"  👁️  Visible watermarks: {visible_count}")
+    print(f"  🔒 Hidden watermarks:  {hidden_count}")
+    print(f"  📊 Visible ratio: {visible_count/num_participants:.1%}")
+    
+    # Check if we have both types
+    has_both = visible_count > 0 and hidden_count > 0
+    print(f"  ✅ Both watermark types present: {has_both}")
+    
+    return 0
+
 def main():
     parser = argparse.ArgumentParser(description="Test chatbot agent")
     parser.add_argument("--message", "-m", help="Single message mode")
@@ -175,13 +248,16 @@ def main():
     parser.add_argument("--model", help="Override model")
     parser.add_argument("--show-full-prompt", action="store_true", help="Show full prompt")
     parser.add_argument("--debug", action="store_true", help="Debug mode")
+    parser.add_argument("--test-sequence", "-s", type=int, metavar="N", help="Test sequential assignment with N participants")
     args = parser.parse_args()
     
     config = load_config()
     if args.model:
         config.setdefault("api", {})["model"] = args.model
     
-    if args.message:
+    if args.test_sequence:
+        return test_sequence(config, args.test_sequence)
+    elif args.message:
         return run_single(config, args)
     else:
         return run_interactive(config, args)

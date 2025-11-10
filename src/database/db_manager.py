@@ -28,7 +28,7 @@ class DatabaseManager:
             db_path: Path to SQLite database file (ignored if DATABASE_URL is set or db_url provided)
             db_url: Optional full SQLAlchemy URL (e.g., postgresql+psycopg2://user:pass@host:5432/db)
         """
-        # Prefer explicit URL or environment variable; also support Streamlit Secrets
+        # Prefer explicit URL parameter, then environment variable; also support Streamlit Secrets
         env_url = os.getenv("DATABASE_URL")
         if not env_url:
             try:
@@ -36,12 +36,15 @@ class DatabaseManager:
                 env_url = st.secrets.get("DATABASE_URL") if hasattr(st, "secrets") else None
             except Exception:
                 env_url = None
-        url = db_url or env_url
+        url = db_url if db_url else env_url
 
         if not url:
             # If db_path looks like a URL already, use it directly
             if "://" in db_path:
                 url = db_path
+            elif db_path == ":memory:":
+                # Handle in-memory SQLite database
+                url = "sqlite:///:memory:"
             else:
                 # Default to SQLite file; ensure directory exists
                 os.makedirs(os.path.dirname(db_path), exist_ok=True)

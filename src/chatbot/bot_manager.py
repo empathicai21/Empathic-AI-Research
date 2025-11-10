@@ -69,7 +69,7 @@ class BotManager:
             "cognitive": _read_text(["config/cognitive_empathy_prompt.txt", "cognitive_empathy_prompt.txt"]),
             "emotional": _read_text(["config/emotional_empathy_prompt.txt", "emotional_empathy_prompt.txt"]),
             "motivational": _read_text(["config/motivational_empathy_prompt.txt", "motivational_empathy_prompt.txt"]),
-            "neutral": ""  # neutral baseline
+            "neutral": _read_text(["config/neutral_empathy_prompt.txt", "neutral_empathy_prompt.txt"])
         }
         self.bot_types = ["cognitive", "emotional", "motivational", "neutral"]
 

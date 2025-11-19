@@ -29,10 +29,10 @@ streamlit run src/app.py  #Run the participant chat app
 
 streamlit run admin_app.py  #Run the admin dashboard (local)
 
-python scripts\setup_database.py --verify  #Verify remote DB (Postgres/Neon)
+python scripts\setup_database.py --verify  #Verify remote DB (Postgres, e.g., Supabase)
 
 python .\check_database.py  #Verify local SQLite (when no DATABASE_URL is set)
 
-python .\tests\test_async_db.py  #Async Postgres connectivity sanity check (Neon)
+python .\tests\test_async_db.py  #Async Postgres connectivity sanity check (managed Postgres, e.g., Supabase)
 
 python scripts\setup_database.py --reset --yes  #Local SQLite reset

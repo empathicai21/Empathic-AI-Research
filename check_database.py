@@ -16,7 +16,7 @@ load_dotenv()
 
 def check_database():
     """Check the contents of the conversation database."""
-    # If DATABASE_URL is set (PostgreSQL, etc.), use SQLAlchemy path instead of sqlite3 direct
+    # If DATABASE_URL is set (PostgreSQL, e.g., Supabase), use SQLAlchemy path instead of sqlite3 direct
     db_url = os.getenv("DATABASE_URL")
     if db_url:
         print("✅ DATABASE_URL detected. Use scripts/setup_database.py --verify for a comprehensive check.")

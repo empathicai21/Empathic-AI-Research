@@ -4,7 +4,7 @@ This runbook provides copy‑pasteable commands to validate the system end‑to�
 
 Caution:
 - Do NOT run the destructive reset steps unless you intend to wipe data. They’re clearly marked as DANGEROUS.
-- For Neon/Postgres, prefer the non‑destructive row clear (TRUNCATE) when you need a clean slate without dropping tables.
+- For managed Postgres (e.g., Supabase), prefer the non‑destructive row clear (TRUNCATE) when you need a clean slate without dropping tables.
 
 ## 0) Prereqs
 
@@ -32,8 +32,8 @@ pip install -r requirements.txt
 
 ```
 OPENAI_API_KEY=YOUR_KEY_HERE
-# Optional: point to Neon/Postgres; leave unset to use local SQLite file
-# DATABASE_URL=postgresql+psycopg2://USER:PASS@HOST:PORT/DB
+# Optional: point to managed Postgres (e.g., Supabase); leave unset to use local SQLite file
+# DATABASE_URL=postgresql+psycopg2://USER:PASS@HOST:PORT/DB?sslmode=require
 ```
 
 - If you prefer ephemeral session vars (for this PowerShell session only):
@@ -41,7 +41,7 @@ OPENAI_API_KEY=YOUR_KEY_HERE
 ```powershell
 # Example (edit values)
 $env:OPENAI_API_KEY = "sk-your-key"
-# $env:DATABASE_URL = "postgresql+psycopg2://USER:PASS@HOST:5432/DB"
+# $env:DATABASE_URL = "postgresql+psycopg2://USER:PASS@HOST:5432/DB?sslmode=require"
 ```
 
 ## 3) Sanity‑check OpenAI access
@@ -56,7 +56,7 @@ python scripts/sanity_check_model.py
 
 ## 4) Database selection and verification
 
-By default the app uses SQLite at `data/database/conversations.db`. If `DATABASE_URL` is set, that takes precedence (e.g., Neon/Postgres).
+By default the app uses SQLite at `data/database/conversations.db`. If `DATABASE_URL` is set, that takes precedence (e.g., managed Postgres like Supabase).
 
 ### 4.1) Verify current DB connectivity and stats
 
@@ -69,7 +69,7 @@ python scripts/setup_database.py --verify
 
 Pick ONE approach based on your backend.
 
-- Neon/Postgres (TRUNCATE with identity reset):
+- Postgres (e.g., Supabase) (TRUNCATE with identity reset):
 ```powershell
 python - << 'PY'
 import os
@@ -81,7 +81,7 @@ with mgr.engine.begin() as conn:
     if mgr.engine.url.get_backend_name().startswith("postgres"):
         conn.execute(text("TRUNCATE TABLE messages, crisis_flags, participants RESTART IDENTITY CASCADE"))
     else:
-        raise SystemExit("Not a Postgres/Neon URL; see SQLite block below")
+        raise SystemExit("Not a Postgres URL; see SQLite block below")
 print("✓ Cleared rows (Postgres), schema intact")
 PY
 ```
@@ -181,7 +181,7 @@ PY
 
 Exports land in `data/exports/`.
 
-## 10) Neon/Postgres end‑to‑end check (safe)
+## 10) Postgres end‑to‑end check (safe)
 
 Read‑only verification of counts and rotation source, without creating test noise:
 ```powershell

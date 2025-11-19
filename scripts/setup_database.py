@@ -58,9 +58,9 @@ def setup_database(reset: bool = False, force: bool = False):
     if not using_url:
         db_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Initialize database (DatabaseManager will honor DATABASE_URL if set)
+    # Initialize database (DatabaseManager will honor DATABASE_URL if set; for Supabase, include sslmode=require)
     if using_url:
-        print("Using DATABASE_URL to initialize remote database (tables will be created if missing)...")
+        print("Using DATABASE_URL to initialize remote Postgres (tables will be created if missing)...")
     else:
         print(f"Creating database at: {db_path}")
     db_manager = DatabaseManager(str(db_path))

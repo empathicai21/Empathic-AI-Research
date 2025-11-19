@@ -14,6 +14,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Load environment variables (DATABASE_URL, etc.)
+# For managed Postgres (e.g., Supabase), ensure TLS (sslmode=require)
 load_dotenv()
 from src.database.db_manager import DatabaseManager
 from src.ui.admin_dashboard import run_admin_dashboard

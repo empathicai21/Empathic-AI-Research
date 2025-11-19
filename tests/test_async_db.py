@@ -30,7 +30,7 @@ async def async_main() -> None:
     db_url_async = _to_asyncpg_url(db_url)
 
     # Create async engine and test a simple query
-    # For Neon, enforce TLS via connect_args for asyncpg
+    # For managed Postgres (e.g., Supabase/Neon), enforce TLS via connect_args for asyncpg
     connect_args = {"ssl": True}
     engine = create_async_engine(db_url_async, echo=True, connect_args=connect_args)
     try:

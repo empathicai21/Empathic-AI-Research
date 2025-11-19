@@ -9,6 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables first (e.g., OPENAI_API_KEY, DATABASE_URL)
+# For Supabase (Postgres), include sslmode=require in DATABASE_URL if needed
 load_dotenv()
 
 # Add src directory to Python path
